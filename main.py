@@ -3,6 +3,8 @@ import json
 from dataclasses import dataclass, asdict
 from datetime import date, timedelta
 from pathlib import Path
+from tkinter import messagebox, ttk
+import tkinter as tk
 from typing import Dict, List
 
 DATA_FILE = Path("records.json")
@@ -113,6 +115,139 @@ def summarize_by_day(records: List[Record]) -> None:
         print(f"{day.isoformat()} | {bar:<{bar_width}} {minutes:>4} 分钟")
 
 
+def launch_ui(_: argparse.Namespace) -> None:
+    records = load_records()
+
+    def refresh_tree() -> None:
+        for row in tree.get_children():
+            tree.delete(row)
+        for idx, record in enumerate(records):
+            tree.insert(
+                "",
+                "end",
+                iid=str(idx),
+                values=(
+                    record.created_at,
+                    record.name,
+                    f"￥{record.amount:.2f}",
+                    record.category,
+                    record.usage_frequency,
+                    f"{record.usage_minutes} 分钟",
+                ),
+            )
+        stats_text.set(build_summary_text(records))
+
+    def submit_record() -> None:
+        name = name_var.get().strip()
+        amount_raw = amount_var.get().strip()
+        category = category_var.get().strip()
+        frequency = frequency_var.get().strip() or "未填写"
+        minutes_raw = minutes_var.get().strip()
+        created_at = date_var.get().strip() or date.today().isoformat()
+
+        if not name or not amount_raw or not category or not minutes_raw:
+            messagebox.showwarning("提示", "请完整填写必填项（名称、金额、类别、时长）。")
+            return
+
+        try:
+            amount_value = float(amount_raw)
+            minutes_value = int(minutes_raw)
+        except ValueError:
+            messagebox.showerror("错误", "金额需为数字，时长需为整数。")
+            return
+
+        new_record = Record(
+            name=name,
+            amount=amount_value,
+            category=category,
+            usage_frequency=frequency,
+            usage_minutes=minutes_value,
+            created_at=created_at,
+        )
+        records.append(new_record)
+        save_records(records)
+        refresh_tree()
+        name_var.set("")
+        amount_var.set("")
+        category_var.set("")
+        frequency_var.set("")
+        minutes_var.set("")
+        date_var.set("")
+        messagebox.showinfo("成功", "记录已保存并更新列表。")
+
+    root = tk.Tk()
+    root.title("小钱宝 - 记账 UI")
+    root.geometry("760x520")
+
+    content = ttk.Frame(root, padding=12)
+    content.pack(fill=tk.BOTH, expand=True)
+
+    list_frame = ttk.Labelframe(content, text="记录列表", padding=10)
+    list_frame.pack(fill=tk.BOTH, expand=True)
+
+    columns = ("日期", "名称", "金额", "类别", "频率", "使用时长")
+    tree = ttk.Treeview(list_frame, columns=columns, show="headings")
+    for col in columns:
+        tree.heading(col, text=col)
+        tree.column(col, anchor=tk.W, width=110)
+    tree.pack(fill=tk.BOTH, expand=True)
+
+    stats_text = tk.StringVar(value=build_summary_text(records))
+    stats_label = ttk.Label(list_frame, textvariable=stats_text, padding=(0, 8, 0, 0))
+    stats_label.pack(fill=tk.X)
+
+    form = ttk.Labelframe(content, text="新增记录", padding=10)
+    form.pack(fill=tk.X, pady=(10, 0))
+
+    name_var = tk.StringVar()
+    amount_var = tk.StringVar()
+    category_var = tk.StringVar()
+    frequency_var = tk.StringVar()
+    minutes_var = tk.StringVar()
+    date_var = tk.StringVar(value=date.today().isoformat())
+
+    ttk.Label(form, text="名称*").grid(row=0, column=0, sticky=tk.W, pady=2)
+    ttk.Entry(form, textvariable=name_var, width=20).grid(row=0, column=1, sticky=tk.W)
+
+    ttk.Label(form, text="金额*￥").grid(row=0, column=2, sticky=tk.W, padx=(10, 0))
+    ttk.Entry(form, textvariable=amount_var, width=12).grid(row=0, column=3, sticky=tk.W)
+
+    ttk.Label(form, text="类别*").grid(row=1, column=0, sticky=tk.W, pady=2)
+    ttk.Entry(form, textvariable=category_var, width=20).grid(row=1, column=1, sticky=tk.W)
+
+    ttk.Label(form, text="使用频率").grid(row=1, column=2, sticky=tk.W, padx=(10, 0))
+    ttk.Combobox(
+        form,
+        textvariable=frequency_var,
+        values=["每天", "每周", "偶尔", "一次性"],
+        width=10,
+    ).grid(row=1, column=3, sticky=tk.W)
+
+    ttk.Label(form, text="使用时长*（分钟）").grid(row=2, column=0, sticky=tk.W, pady=2)
+    ttk.Entry(form, textvariable=minutes_var, width=12).grid(row=2, column=1, sticky=tk.W)
+
+    ttk.Label(form, text="日期 (YYYY-MM-DD)").grid(row=2, column=2, sticky=tk.W, padx=(10, 0))
+    ttk.Entry(form, textvariable=date_var, width=12).grid(row=2, column=3, sticky=tk.W)
+
+    ttk.Button(form, text="保存记录", command=submit_record).grid(
+        row=3, column=0, columnspan=4, sticky=tk.EW, pady=(8, 0)
+    )
+
+    for child in form.winfo_children():
+        child.grid_configure(padx=4, pady=2)
+
+    refresh_tree()
+    root.mainloop()
+
+
+def build_summary_text(records: List[Record]) -> str:
+    if not records:
+        return "暂无记录，添加后可自动汇总。"
+    total_amount = sum(r.amount for r in records)
+    total_minutes = sum(r.usage_minutes for r in records)
+    return f"共 {len(records)} 条记录 | 总支出 ￥{total_amount:.2f} | 总使用 {total_minutes} 分钟"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="简易记账应用，支持频率/使用时间统计。")
     subparsers = parser.add_subparsers(dest="command")
@@ -138,6 +273,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     stats_parser = subparsers.add_parser("stats", help="查看统计面板")
     stats_parser.set_defaults(func=stats_panel)
+
+    ui_parser = subparsers.add_parser("ui", help="启动图形界面")
+    ui_parser.set_defaults(func=launch_ui)
 
     return parser
 
