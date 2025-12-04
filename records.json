@@ -3,8 +3,16 @@
     "name": "Netflix会员",
     "amount": 88.0,
     "category": "娱乐",
-    "usage_frequency": "每天",
-    "usage_minutes": 30,
+    "usage_frequency": "偶尔",
+    "usage_minutes": 200,
+    "created_at": "2025-12-04"
+  },
+  {
+    "name": "健身会员",
+    "amount": 999.0,
+    "category": "健身",
+    "usage_frequency": "偶尔",
+    "usage_minutes": 60,
     "created_at": "2025-12-04"
   }
 ]
