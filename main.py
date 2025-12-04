@@ -147,7 +147,10 @@ def build_dashboard(records: List[Record]) -> Dict[str, object]:
     average_per_day = month_minutes / elapsed_days if month_minutes else 0
     progress = min(int((month_minutes / 60) * 100), 100) if month_minutes else 0
 
-    sorted_records = sorted(records, key=lambda r: parse_iso_date(r.created_at), reverse=True)
+    indexed_records = list(enumerate(records))
+    sorted_records = sorted(
+        indexed_records, key=lambda pair: parse_iso_date(pair[1].created_at), reverse=True
+    )
     recent_records = sorted_records[:5]
 
     return {
@@ -324,13 +327,22 @@ def create_app():
             <div class=\"section-title\">最近记录</div>
             {% if recent_records %}
               <div class=\"recent\">
-                {% for item in recent_records %}
+                {% for record_id, item in recent_records %}
                   <div class=\"recent-item\">
                     <div class=\"recent-main\">
                       <span class=\"circle\"></span>
                       <div>
                         <div style=\"font-weight:600;\">{{ item.name }}</div>
                         <div class=\"muted\">{{ item.created_at }} · {{ item.category }} · {{ item.usage_frequency }}</div>
+                        <form method=\"post\" action=\"{{ url_for('update_record', record_id=record_id) }}\" style=\"display:grid;gap:6px;margin-top:8px;grid-template-columns:1fr 1fr auto;align-items:center;\">
+                          <select name=\"frequency\" style=\"padding:6px 10px;border-radius:10px;border:1px solid var(--border);background:#f9faff;\">
+                            {% for option in ['每周1天', '每周2天', '每天', '偶尔'] %}
+                              <option value=\"{{ option }}\" {% if option == item.usage_frequency %}selected{% endif %}>{{ option }}</option>
+                            {% endfor %}
+                          </select>
+                          <input type=\"number\" name=\"usage_minutes\" value=\"{{ item.usage_minutes }}\" min=\"0\" style=\"padding:6px 10px;border-radius:10px;border:1px solid var(--border);background:#f9faff;\" required>
+                          <button type=\"submit\" class=\"chip\" style=\"margin:0;\">更新</button>
+                        </form>
                       </div>
                     </div>
                     <div style=\"text-align:right;\">
@@ -390,6 +402,28 @@ def create_app():
         records.append(new_record)
         save_records(records)
         flash("记录已保存！")
+        return redirect(url_for("index"))
+
+    @app.route("/records/<int:record_id>", methods=["POST"], endpoint="update_record")
+    def update_record_route(record_id: int):
+        records = load_records()
+        if record_id < 0 or record_id >= len(records):
+            flash("未找到要更新的记录。")
+            return redirect(url_for("index"))
+
+        frequency = request.form.get("frequency", "").strip() or records[record_id].usage_frequency
+        minutes_raw = request.form.get("usage_minutes", "").strip()
+
+        try:
+            minutes_value = int(minutes_raw)
+        except ValueError:
+            flash("时长需为整数。")
+            return redirect(url_for("index"))
+
+        records[record_id].usage_frequency = frequency
+        records[record_id].usage_minutes = minutes_value
+        save_records(records)
+        flash("使用时间和频率已更新！")
         return redirect(url_for("index"))
 
     return app
