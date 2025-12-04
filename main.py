@@ -147,6 +147,16 @@ def build_dashboard(records: List[Record]) -> Dict[str, object]:
     average_per_day = month_minutes / elapsed_days if month_minutes else 0
     progress = min(int((month_minutes / 60) * 100), 100) if month_minutes else 0
 
+    usage_by_project: Dict[str, int] = {}
+    for record in records:
+        usage_by_project[record.name] = (
+            usage_by_project.get(record.name, 0) + record.usage_minutes
+        )
+
+    sorted_usage = sorted(usage_by_project.items(), key=lambda item: item[1], reverse=True)
+    chart_labels = [item[0] for item in sorted_usage]
+    chart_minutes = [item[1] for item in sorted_usage]
+
     indexed_records = list(enumerate(records))
     sorted_records = sorted(
         indexed_records, key=lambda pair: parse_iso_date(pair[1].created_at), reverse=True
@@ -164,6 +174,8 @@ def build_dashboard(records: List[Record]) -> Dict[str, object]:
         "average_per_day": average_per_day,
         "progress": progress,
         "recent_records": recent_records,
+        "chart_labels": chart_labels,
+        "chart_minutes": chart_minutes,
     }
 
 
@@ -228,6 +240,9 @@ def create_app():
           .recent-main { display: flex; gap: 10px; align-items: center; }
           .circle { width: 10px; height: 10px; border-radius: 50%; background: #5c6bfe; }
           .footer { text-align: center; margin-top: 16px; color: var(--muted); font-size: 12px; }
+          .chart-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+          .chart-card { background: #f7f8ff; border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+          canvas { width: 100% !important; height: 260px !important; }
         </style>
       </head>
       <body>
@@ -357,8 +372,77 @@ def create_app():
             {% endif %}
           </section>
 
+          <section class=\"card stack\">
+            <div class=\"section-title\">项目使用时长</div>
+            {% if chart_labels %}
+              <div class=\"chart-grid\">
+                <div class=\"chart-card\">
+                  <div class=\"muted\" style=\"margin-bottom:8px;\">按项目的使用时长（分钟）</div>
+                  <canvas id=\"barChart\"></canvas>
+                </div>
+                <div class=\"chart-card\">
+                  <div class=\"muted\" style=\"margin-bottom:8px;\">项目占比</div>
+                  <canvas id=\"pieChart\"></canvas>
+                </div>
+              </div>
+            {% else %}
+              <div class=\"empty\">暂无数据，添加记录后可查看柱状图和饼图。</div>
+            {% endif %}
+          </section>
+
           <div class=\"footer\">本月 {{ start_of_month.strftime('%m/%d') }} - {{ end_of_month.strftime('%m/%d') }} · 共 {{ month_minutes }} 分钟 · 总支出 ¥{{ '%.2f' % total_amount }}</div>
         </div>
+        <script src=\"https://cdn.jsdelivr.net/npm/chart.js\"></script>
+        <script>
+          const labels = {{ chart_labels | tojson }};
+          const minutes = {{ chart_minutes | tojson }};
+
+          function withAlpha(hex, alpha) {
+            const bigint = parseInt(hex.replace('#', ''), 16);
+            const r = (bigint >> 16) & 255;
+            const g = (bigint >> 8) & 255;
+            const b = bigint & 255;
+            return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+          }
+
+          if (labels.length) {
+            const palette = ['#5c6bfe', '#7b8cff', '#a2b1ff', '#c6d0ff', '#8996ff', '#3f4de3'];
+            const barCtx = document.getElementById('barChart');
+            new Chart(barCtx, {
+              type: 'bar',
+              data: {
+                labels,
+                datasets: [{
+                  label: '分钟',
+                  data: minutes,
+                  backgroundColor: labels.map((_, i) => withAlpha(palette[i % palette.length], 0.8)),
+                  borderRadius: 8,
+                }],
+              },
+              options: {
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 30 } } },
+              },
+            });
+
+            const pieCtx = document.getElementById('pieChart');
+            new Chart(pieCtx, {
+              type: 'pie',
+              data: {
+                labels,
+                datasets: [{
+                  data: minutes,
+                  backgroundColor: labels.map((_, i) => withAlpha(palette[i % palette.length], 0.85)),
+                  borderColor: '#fff',
+                  borderWidth: 2,
+                }],
+              },
+              options: {
+                plugins: { legend: { position: 'bottom' } },
+              },
+            });
+          }
+        </script>
       </body>
     </html>
     """
